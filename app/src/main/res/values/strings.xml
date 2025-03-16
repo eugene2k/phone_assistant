@@ -7,4 +7,5 @@
     <string name="preferences_file">prefs</string>
     <string name="service_description">Облегчает использование телефона ограничивая возможности пользователя до простого списка контактов доступных в выбранном в настройках приложения и возможности звонить любому из этих контактов</string>
     <string name="answer">Ответить</string>
+    <string name="overlay_text">Вызываю:\n%s</string>
 </resources>

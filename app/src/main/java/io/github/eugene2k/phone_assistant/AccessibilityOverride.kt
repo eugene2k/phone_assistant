@@ -260,16 +260,18 @@ class AccessibilityOverride : AccessibilityService() {
                 )
             // NOTE: window placement is screwed up smh, so this is hardcoded
             accessibilityWindowParams.y = 500
-            val winMgr =
-                getSystemService(WINDOW_SERVICE) as WindowManager
-            if (!accessibilityWindow.isAttachedToWindow)
-                winMgr.addView(accessibilityWindow, accessibilityWindowParams)
-            else {
-                winMgr.updateViewLayout(
-                    accessibilityWindow,
-                    accessibilityWindowParams
-                )
-            }
+            // TODO: remove the next line and uncomment the lines following it after testing
+            removeOverlay()
+//            val winMgr =
+//                getSystemService(WINDOW_SERVICE) as WindowManager
+//            if (!accessibilityWindow.isAttachedToWindow)
+//                winMgr.addView(accessibilityWindow, accessibilityWindowParams)
+//            else {
+//                winMgr.updateViewLayout(
+//                    accessibilityWindow,
+//                    accessibilityWindowParams
+//                )
+//            }
             if (!wakeLock!!.isHeld) wakeLock!!.acquire(120 * 60 * 1000L /*120 minutes*/)
 
             expectMainActivity = true

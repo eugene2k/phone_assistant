@@ -189,7 +189,8 @@ class ContactsListActivity : FragmentActivity() {
             override fun onAction(item: Contact) {
                 finish()
                 var intent = Intent(AccessibilityOverride.OVERLAY_ENABLE)
-                intent.putExtra("contact", item.label)
+                val overlayText = getString(R.string.overlay_text)
+                intent.putExtra("contact", overlayText.format(item.label))
                 sendBroadcast(intent)
                 intent = Intent(Intent.ACTION_VIEW).addCategory(Intent.CATEGORY_DEFAULT)
                     .addFlags(Intent.FLAG_ACTIVITY_NO_HISTORY or Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
