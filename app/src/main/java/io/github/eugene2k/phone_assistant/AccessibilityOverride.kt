@@ -307,10 +307,6 @@ class AccessibilityOverride : AccessibilityService() {
                 if (childCount > 0)
                     children = (0..<childCount).joinToString(prefix = "\n", separator = "") {
                         var childView = view.getChild(it)
-                        if (childView == null) {
-                            Log.e(javaClass.name, "it = %d".format(it))
-                            Log.e(javaClass.name, "childCount = %d".format(childCount))
-                        }
                         nodeInfoTreeToFormattedString(childView, it, indent + 4)
                     }
 
