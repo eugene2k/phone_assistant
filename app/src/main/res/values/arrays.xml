@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string-array name="back_button_presses">
+        <item>Одинарное нажатие</item>
+        <item>Двойное нажатие</item>
+        <item>Тройное нажатие</item>
+    </string-array>
+</resources>

@@ -1,0 +1,10 @@
+<resources>
+    <string name="app_name">Телефонный Помощник</string>
+    <string name="charge_now">Зарядите Телефон!</string>
+    <string name="make_calls">Звонить</string>
+    <string name="charge_level">%1$d%%</string>
+    <string name="app_settings">Настройки программы</string>
+    <string name="preferences_file">prefs</string>
+    <string name="service_description">Облегчает использование телефона ограничивая возможности пользователя до простого списка контактов доступных в выбранном в настройках приложения и возможности звонить любому из этих контактов</string>
+    <string name="answer">Ответить</string>
+</resources>
