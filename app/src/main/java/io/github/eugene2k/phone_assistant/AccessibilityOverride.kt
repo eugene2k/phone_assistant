@@ -76,7 +76,6 @@ class AccessibilityOverride : AccessibilityService() {
             )
         }
     }
-
     private var lastHandledState = State.Other
     private var expectMainActivity = false
     private var currentActivity = ""
@@ -389,10 +388,8 @@ class AccessibilityOverride : AccessibilityService() {
                             val root = rootInActiveWindow
                             when (currentActivity) {
                                 VIBER_CALL -> {
-//                                    val topWindow =
-//                                        windows.find { (it.type != AccessibilityWindowInfo.TYPE_ACCESSIBILITY_OVERLAY) and (it.javaClass.name == VIBER_CALL) }
-//                                    val root = topWindow?.root
                                     printNodeInfoTree(root)
+
                                     val result =
                                         root?.findAccessibilityNodeInfosByViewId("com.viber.voip:id/leaveConference")
                                     if (result?.isNotEmpty() == true) {
@@ -429,31 +426,47 @@ class AccessibilityOverride : AccessibilityService() {
                         }
                         return true
                     }
+                    else -> {
+                        Log.i(javaClass.name, "Key %X pressed".format(event.keyCode))
+                        return super.onKeyEvent(event)
+                    }
+                }
+            }
 
-                    KeyEvent.ACTION_UP -> {
-                        when (event.keyCode) {
-                            KeyEvent.KEYCODE_BACK -> {
-                                Log.i(javaClass.name, "BACK button pressed")
+            KeyEvent.ACTION_UP -> {
+                when (event.keyCode) {
+                    KeyEvent.KEYCODE_BACK -> {
+                        Log.i(javaClass.name, "BACK button released")
 
-                                return if (limitedMode) true
-                                else super.onKeyEvent(event)
-                            }
+                        return if (limitedMode) true
+                        else super.onKeyEvent(event)
+                    }
 
-                            KeyEvent.KEYCODE_APP_SWITCH -> {
-                                Log.i(
-                                    javaClass.name,
-                                    "APP_SWITCH button pressed".format(event.keyCode)
-                                )
+                    KeyEvent.KEYCODE_APP_SWITCH -> {
+                        Log.i(
+                            javaClass.name,
+                            "APP_SWITCH button released".format(event.keyCode)
+                        )
 
-                                return if (limitedMode) true
-                                else super.onKeyEvent(event)
-                            }
+                        return if (limitedMode) true
+                        else super.onKeyEvent(event)
+                    }
 
-                            else -> {
-                                Log.i(javaClass.name, "Key %X pressed".format(event.keyCode))
-                                return super.onKeyEvent(event)
-                            }
+                    KeyEvent.KEYCODE_HOME -> {
+                        Log.i(
+                            javaClass.name,
+                            "HOME_BUTTON button released".format(event.keyCode)
+                        )
+
+                        if (currentActivity != MainActivity::class.java.name) {
+                            startLauncher()
                         }
+                        return true
+                    }
+
+                    else -> {
+                        Log.i(javaClass.name, "Key %X released".format(event.keyCode))
+                        return super.onKeyEvent(event)
                     }
                 }
             }
