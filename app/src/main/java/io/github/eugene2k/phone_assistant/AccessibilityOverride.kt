@@ -21,12 +21,6 @@ import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 
-
-private const val WHATSAPP_CALL = "com.whatsapp.voipcalling.VoipActivityV2"
-private const val VIBER_CALL = "com.viber.voip.phone.PhoneFragmentActivity"
-//private const val TELEGRAM_CALL = "org.telegram.ui.LaunchActivity"
-
-
 private val PACKAGE_INSTALLER_ACTIVITIES = arrayOf(
     "com.android.packageinstaller.permission.ui.GrantPermissionsActivity",
     "com.google.android.packageinstaller"
@@ -35,7 +29,102 @@ private val PACKAGE_INSTALLER_ACTIVITIES = arrayOf(
 class Overlay(context: Context) : androidx.appcompat.widget.AppCompatTextView(context)
 
 enum class State {
-    CallInProgress, Answering, Finished, Other
+    CallInProgress, Answering, CallEnded, Other, Home
+}
+
+sealed class WhatsAppInterface {
+    data class CallInProgress(val inner: List<AccessibilityNodeInfo>) : WhatsAppInterface()
+    data object Answering : WhatsAppInterface()
+
+    //    data object CallEnded : WhatsAppInterface()
+    data object Other : WhatsAppInterface()
+    companion object {
+        const val CALL_IN_PROGRESS = 0b01
+        const val ANSWERING = 0b10
+//        const val CALL_ENDED = 0b100
+
+        fun checkState(source: AccessibilityNodeInfo, statesToCheck: Int): WhatsAppInterface {
+            var results: List<AccessibilityNodeInfo>
+            if (statesToCheck and CALL_IN_PROGRESS != 0) {
+                results =
+                    source.findAccessibilityNodeInfosByViewId("com.whatsapp:id/audio_route_button")
+                if (results.isNotEmpty()) {
+                    return CallInProgress(results)
+                }
+            }
+            if (statesToCheck and ANSWERING != 0) {
+                results =
+                    source.findAccessibilityNodeInfosByViewId("com.whatsapp:id/answer_call_view_id")
+                if (results.isNotEmpty()) {
+                    return Answering
+                }
+            }
+//            if (statesToCheck and CALL_ENDED != 0) {
+//                results =
+//                    source.findAccessibilityNodeInfosByViewId("com.viber.voip:id/phone_redial")
+//                if (results.isNotEmpty()) {
+//                    return CallEnded
+//                }
+//            }
+            return Other
+        }
+
+        fun tryEndCall(root: AccessibilityNodeInfo) {
+            val result =
+                root.findAccessibilityNodeInfosByViewId("com.whatsapp:id/end_call_button")
+            if (result.isNotEmpty()) {
+                val endCallButton = result[0]
+                endCallButton.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+            }
+        }
+    }
+}
+
+sealed class ViberInterface {
+    data class CallInProgress(val inner: List<AccessibilityNodeInfo>) : ViberInterface()
+    data object Answering : ViberInterface()
+    data object CallEnded : ViberInterface()
+    data object Other : ViberInterface()
+    companion object {
+        const val CALL_IN_PROGRESS = 0b01
+        const val ANSWERING = 0b10
+        const val CALL_ENDED = 0b100
+
+        fun checkState(source: AccessibilityNodeInfo, statesToCheck: Int): ViberInterface {
+            var results: List<AccessibilityNodeInfo>
+            if (statesToCheck and CALL_IN_PROGRESS != 0) {
+                results =
+                    source.findAccessibilityNodeInfosByViewId("com.viber.voip:id/speakerPhone")
+                if (results.isNotEmpty()) {
+                    return CallInProgress(results)
+                }
+            }
+            if (statesToCheck and ANSWERING != 0) {
+                results =
+                    source.findAccessibilityNodeInfosByViewId("com.viber.voip:id/phone_answer")
+                if (results.isNotEmpty()) {
+                    return Answering
+                }
+            }
+            if (statesToCheck and CALL_ENDED != 0) {
+                results =
+                    source.findAccessibilityNodeInfosByViewId("com.viber.voip:id/phone_redial")
+                if (results.isNotEmpty()) {
+                    return CallEnded
+                }
+            }
+            return Other
+        }
+
+        fun tryEndCall(root: AccessibilityNodeInfo) {
+            val result =
+                root.findAccessibilityNodeInfosByViewId("com.viber.voip:id/leaveConference")
+            if (result.isNotEmpty()) {
+                val endCallButton = result[0]
+                endCallButton.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+            }
+        }
+    }
 }
 
 class AccessibilityOverride : AccessibilityService() {
@@ -70,15 +159,19 @@ class AccessibilityOverride : AccessibilityService() {
 
             val winMgr =
                 getSystemService(WINDOW_SERVICE) as WindowManager
-            winMgr.addView(
-                accessibilityWindow,
-                accessibilityWindowParams
-            )
+            try {
+                winMgr.addView(
+                    accessibilityWindow,
+                    accessibilityWindowParams
+                )
+            } catch (_: IllegalStateException) {
+                Log.e(javaClass.name, "Overlay already present")
+                winMgr.removeView(accessibilityWindow)
+            }
         }
     }
     private var lastHandledState = State.Other
     private var expectMainActivity = false
-    private var currentActivity = ""
     private var wakeLock: PowerManager.WakeLock? = null
     private var accessibilityWindow: Overlay? = null
 
@@ -99,74 +192,64 @@ class AccessibilityOverride : AccessibilityService() {
         label.textAlignment = View.TEXT_ALIGNMENT_CENTER
         label.gravity = Gravity.CENTER_VERTICAL
         accessibilityWindow = label
-        Log.i(javaClass.name, "Service created")
+        Log.d(javaClass.name, "Service created")
     }
 
     override fun onServiceConnected() {
         super.onServiceConnected()
-        Log.i(javaClass.name, "Service connected")
+        Log.d(javaClass.name, "Service connected")
         val formatted = serviceInfo.toString()
             .replace(", ", ",\n   ")
-        Log.i(javaClass.name, "ServiceInfo {\n   %s\n}".format(formatted))
+        Log.d(javaClass.name, "ServiceInfo {\n   %s\n}".format(formatted))
     }
 
-    @OptIn(ExperimentalStdlibApi::class)
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event != null) {
             when (event.eventType) {
                 AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
-                    Log.i(javaClass.name, "Window State Changed!")
-                    Log.i(
+                    Log.d(javaClass.name, "Window State Changed")
+                    Log.d(
                         javaClass.name,
                         "Package: %s".format(event.packageName?.toString() ?: "<null>")
                     )
-                    Log.i(
+                    Log.d(
                         javaClass.name,
                         "Class: %s".format(event.className?.toString() ?: "<null>")
                     )
-                    Log.i(javaClass.name, "limitedMode=%b".format(limitedMode))
+                    Log.d(javaClass.name, "limitedMode=%b".format(limitedMode))
                     if (event.packageName !in PACKAGE_INSTALLER_ACTIVITIES) {
-                        var className = event.className.toString()
+                        val className = event.className.toString()
 
-                        if (className != "android.widget.FrameLayout")
-                            currentActivity = event.className.toString()
                         if (event.packageName == packageName) {
                             if (className == MainActivity::class.java.name) {
                                 if (wakeLock!!.isHeld)
                                     wakeLock!!.release()
                                 limitedMode = true
                                 expectMainActivity = false
+                                lastHandledState = State.Home
                                 Log.i(javaClass.name, "Limited mode enabled")
                             }
                         } else {
                             if (limitedMode) {
                                 when (event.packageName) {
                                     "com.viber.voip" -> {
-                                        val source = event.source
-                                        printNodeInfoTree(source)
-                                        if (currentActivity == "androidx.appcompat.app.AlertDialog") {
+                                        if (className == "androidx.appcompat.app.AlertDialog") {
                                             expectMainActivity = false
                                             val am =
                                                 getSystemService(ACTIVITY_SERVICE) as ActivityManager
                                             am.killBackgroundProcesses("com.viber.voip")
                                             startLauncher()
+                                            return
                                         }
-                                        if (source != null) {
-                                            var results =
-                                                source.findAccessibilityNodeInfosByViewId("com.viber.voip:id/speakerPhone")
-                                            if (results.isNotEmpty() && lastHandledState != State.CallInProgress) {
-                                                handleCallInProgress(results[0])
-                                                lastHandledState = State.CallInProgress
-                                                return
-                                            }
-
-                                            results =
-                                                source.findAccessibilityNodeInfosByViewId("com.viber.voip:id/phone_answer")
-                                            if (results.isNotEmpty() && lastHandledState != State.Answering) {
-                                                handlePhoneRinging()
-                                                lastHandledState = State.Answering
-                                                return
-                                            }
+                                        val root = event.source?.window?.root
+                                        if (root != null) {
+                                            val result = ViberInterface.checkState(
+                                                root,
+                                                ViberInterface.CALL_IN_PROGRESS or ViberInterface.ANSWERING or ViberInterface.CALL_ENDED
+                                            )
+                                            handleViberState(result)
+                                        } else {
+                                            Log.e(javaClass.name, "event root is null")
                                         }
                                     }
 
@@ -175,6 +258,9 @@ class AccessibilityOverride : AccessibilityService() {
                                     }
 
                                     else -> {
+                                        Log.d(javaClass.name, packageName)
+                                        Log.d(javaClass.name, className)
+                                        lastHandledState = State.Other
                                         expectMainActivity = false
                                         startLauncher()
                                     }
@@ -185,42 +271,45 @@ class AccessibilityOverride : AccessibilityService() {
                 }
 
                 AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED -> {
-                    Log.i(javaClass.name, "Window Content Changed")
+                    Log.d(javaClass.name, "Window Content Changed")
+                    val className = event.className.toString()
+                    Log.d(javaClass.name, "Class: %s".format(className))
+
                     if (limitedMode)
                         when (event.packageName) {
                             "com.viber.voip" -> {
-                                Log.i(
-                                    javaClass.name,
-                                    "Class: %s".format(event.className.toString())
-                                )
-                                if (event.className == "android.widget.Chronometer") return
-                                if (currentActivity != VIBER_CALL) return
-                                val source = event.source
-                                if (source != null) {
-                                    printNodeInfoTree(source)
+                                if (className == "android.widget.Chronometer") return
+                                val root = event.source?.window?.root
 
-                                    var results =
-                                        source.findAccessibilityNodeInfosByViewId("com.viber.voip:id/phone_redial")
-                                    if (results.isNotEmpty() && lastHandledState != State.Finished) {
-                                        handleCallFinished()
-                                        lastHandledState = State.Finished
-                                        return
-                                    }
+                                if (root != null) {
+                                    val result = ViberInterface.checkState(
+                                        root,
+                                        ViberInterface.CALL_IN_PROGRESS or ViberInterface.ANSWERING or ViberInterface.CALL_ENDED
+                                    )
+                                    handleViberState(result)
 
-                                    results =
-                                        source.findAccessibilityNodeInfosByViewId("com.viber.voip:id/speakerPhone")
-                                    if (results.isNotEmpty() && lastHandledState != State.CallInProgress) {
-                                        handleCallInProgress(results[0])
-                                        lastHandledState = State.CallInProgress
-                                        return
-                                    }
+                                } else {
+                                    Log.e(javaClass.name, "event root is null")
+                                }
+                            }
+
+                            "com.whatsapp" -> {
+                                val root = event.source?.window?.root
+                                if (root != null) {
+                                    val result = WhatsAppInterface.checkState(
+                                        root,
+                                        WhatsAppInterface.CALL_IN_PROGRESS or WhatsAppInterface.ANSWERING
+                                    )
+                                    handleWhatsAppState(result)
+                                } else {
+                                    Log.e(javaClass.name, "event root is null")
                                 }
                             }
                         }
                 }
 
                 else -> {
-                    Log.i(
+                    Log.d(
                         javaClass.name,
                         "Unrecognized event type: %x".format(event.eventType)
                     )
@@ -229,68 +318,177 @@ class AccessibilityOverride : AccessibilityService() {
         }
     }
 
-    private fun handleCallFinished() {
-        if (expectMainActivity) {
-            expectMainActivity = false
-            startLauncher()
-        }
-    }
+    private fun handleWhatsAppState(result: WhatsAppInterface) {
+        when (result) {
+            is WhatsAppInterface.CallInProgress -> if (lastHandledState != State.CallInProgress) {
+                Log.d(javaClass.name, "WhatsAppState: CallInProgress")
 
-    private fun handleCallInProgress(
-        speakerButton: AccessibilityNodeInfo
-    ) {
-        speakerButton.performAction(
-            AccessibilityNodeInfo.ACTION_CLICK
-        )
-
-        val accessibilityWindow = accessibilityWindow
-        if (accessibilityWindow != null) {
-            var buttonBounds = Rect()
-            speakerButton.getBoundsInScreen(buttonBounds)
-            accessibilityWindow.text = ""
-            accessibilityWindow.invalidate()
-            val accessibilityWindowParams =
-                WindowManager.LayoutParams(
-                    WindowManager.LayoutParams.MATCH_PARENT,
-                    buttonBounds.height(),
-                    WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
-                    PixelFormat.OPAQUE
+                val speakerButton = result.inner[0]
+                speakerButton.performAction(
+                    AccessibilityNodeInfo.ACTION_CLICK
                 )
-            // NOTE: window placement is screwed up smh, so this is hardcoded
-            accessibilityWindowParams.y = 500
-            // TODO: remove the next line and uncomment the lines following it after testing
-            removeOverlay()
-//            val winMgr =
-//                getSystemService(WINDOW_SERVICE) as WindowManager
-//            if (!accessibilityWindow.isAttachedToWindow)
-//                winMgr.addView(accessibilityWindow, accessibilityWindowParams)
-//            else {
-//                winMgr.updateViewLayout(
-//                    accessibilityWindow,
-//                    accessibilityWindowParams
-//                )
+
+                val accessibilityWindow = accessibilityWindow
+                if (accessibilityWindow != null) {
+                    val buttonBounds = Rect()
+                    speakerButton.getBoundsInScreen(buttonBounds)
+                    accessibilityWindow.text = ""
+                    accessibilityWindow.invalidate()
+                    val accessibilityWindowParams =
+                        WindowManager.LayoutParams(
+                            WindowManager.LayoutParams.MATCH_PARENT,
+                            buttonBounds.height(),
+                            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+                            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                            PixelFormat.OPAQUE
+                        )
+                    // NOTE: window placement is screwed up smh, so this is hardcoded
+                    accessibilityWindowParams.y = 500
+                    val winMgr =
+                        getSystemService(WINDOW_SERVICE) as WindowManager
+                    try {
+                        Log.d(javaClass.name, "Attaching overlay")
+                        winMgr.addView(accessibilityWindow, accessibilityWindowParams)
+                    } catch (_: IllegalStateException) {
+                        Log.d(
+                            javaClass.name,
+                            "Attaching overlay: Overlay appears to be attached, updating layout instead"
+                        )
+                        winMgr.updateViewLayout(
+                            accessibilityWindow,
+                            accessibilityWindowParams
+                        )
+                    }
+                    if (!wakeLock!!.isHeld) wakeLock!!.acquire(120 * 60 * 1000L /*120 minutes*/)
+                    expectMainActivity = true
+                }
+
+                lastHandledState = State.CallInProgress
+            }
+
+//            WhatsAppInterface.CallEnded -> if (lastHandledState != State.CallEnded) {
+//                Log.d(javaClass.name, "WhatsAppState: CallEnded")
+//                if (expectMainActivity) {
+//                    expectMainActivity = false
+//                    startLauncher()
+//                }
+//                lastHandledState = State.CallEnded
 //            }
-            if (!wakeLock!!.isHeld) wakeLock!!.acquire(120 * 60 * 1000L /*120 minutes*/)
 
-            expectMainActivity = true
+            WhatsAppInterface.Answering -> if (lastHandledState != State.Answering) {
+                Log.d(javaClass.name, "WhatsAppState: Answering")
+                // Call needs answering
+                removeOverlay()
+                // NOTE: There are three possible outcomes after this state:
+                // 1. the user ignores
+                // 2. the user picks up
+                // 3. the user declines
+                // in cases 1 or 3, the user should be returned to the home screen
+                // otherwise nothing should be done.
+                // Since the check for the main activity doesn't happen when handling
+                // PhoneFragmentActivity, and in the TYPE_WINDOW_CONTENT_CHANGED event handler it is
+                // only checked in the redialing case expectMainActivity=true is a viable solution
+                expectMainActivity = true
+
+                lastHandledState = State.Answering
+            }
+
+            else -> {
+                Log.d(
+                    javaClass.name,
+                    "WhatsAppState: Other"
+                )
+                lastHandledState = State.Other
+                printNodeInfoTree(rootInActiveWindow)
+            }
         }
-
     }
 
-    private fun handlePhoneRinging() {
-        // Call needs answering
-        removeOverlay()
-        // NOTE: There are three possible outcomes after this state:
-        // 1. the user ignores
-        // 2. the user picks up
-        // 3. the user declines
-        // in cases 1 or 3, the user should be returned to the home screen
-        // otherwise nothing should be done.
-        // Since the check for the main activity doesn't happen when handling
-        // PhoneFragmentActivity, and in the TYPE_WINDOW_CONTENT_CHANGED event handler it is
-        // only checked in the redialing case expectMainActivity=true is a viable solution
-        expectMainActivity = true
+    private fun handleViberState(result: ViberInterface) {
+        when (result) {
+            is ViberInterface.CallInProgress -> if (lastHandledState != State.CallInProgress) {
+                Log.d(javaClass.name, "ViberState: CallInProgress")
+
+                val speakerButton = result.inner[0]
+                speakerButton.performAction(
+                    AccessibilityNodeInfo.ACTION_CLICK
+                )
+
+                val accessibilityWindow = accessibilityWindow
+                if (accessibilityWindow != null) {
+                    val buttonBounds = Rect()
+                    speakerButton.getBoundsInScreen(buttonBounds)
+                    accessibilityWindow.text = ""
+                    accessibilityWindow.invalidate()
+                    val accessibilityWindowParams =
+                        WindowManager.LayoutParams(
+                            WindowManager.LayoutParams.MATCH_PARENT,
+                            buttonBounds.height(),
+                            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+                            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                            PixelFormat.TRANSPARENT
+                        )
+                    // NOTE: window placement is screwed up smh, so this is hardcoded
+                    accessibilityWindowParams.y = 500
+                    val winMgr =
+                        getSystemService(WINDOW_SERVICE) as WindowManager
+                    try {
+                        Log.d(javaClass.name, "Attaching overlay")
+                        winMgr.addView(accessibilityWindow, accessibilityWindowParams)
+                    } catch (_: IllegalStateException) {
+                        Log.d(
+                            javaClass.name,
+                            "Attaching overlay: Overlay appears to be attached, updating layout instead"
+                        )
+                        winMgr.updateViewLayout(
+                            accessibilityWindow,
+                            accessibilityWindowParams
+                        )
+                    }
+                }
+                if (!wakeLock!!.isHeld) wakeLock!!.acquire(120 * 60 * 1000L /*120 minutes*/)
+                expectMainActivity = true
+
+                lastHandledState = State.CallInProgress
+            }
+
+            ViberInterface.CallEnded -> if (lastHandledState != State.CallEnded) {
+                Log.d(javaClass.name, "ViberState: CallEnded")
+                if (wakeLock?.isHeld == true) wakeLock?.release()
+                if (expectMainActivity) {
+                    expectMainActivity = false
+                    startLauncher()
+                }
+                lastHandledState = State.CallEnded
+            }
+
+            ViberInterface.Answering -> if (lastHandledState != State.Answering) {
+                Log.d(javaClass.name, "ViberState: Answering")
+                // Call needs answering
+                removeOverlay()
+                // NOTE: There are three possible outcomes after this state:
+                // 1. the user ignores
+                // 2. the user picks up
+                // 3. the user declines
+                // in cases 1 or 3, the user should be returned to the home screen
+                // otherwise nothing should be done.
+                // Since the check for the main activity doesn't happen when handling
+                // PhoneFragmentActivity, and in the TYPE_WINDOW_CONTENT_CHANGED event handler it is
+                // only checked in the redialing case expectMainActivity=true is a viable solution
+                expectMainActivity = true
+
+                lastHandledState = State.Answering
+            }
+
+            else -> {
+                Log.d(
+                    javaClass.name,
+                    "ViberState: Other"
+                )
+                lastHandledState = State.Other
+                printNodeInfoTree(rootInActiveWindow)
+            }
+        }
     }
 
     private fun printNodeInfoTree(view: AccessibilityNodeInfo?) {
@@ -299,17 +497,17 @@ class AccessibilityOverride : AccessibilityService() {
             childIndex: Int,
             indent: Int
         ): String {
-            var indentStr = " ".repeat(indent)
+            val indentStr = " ".repeat(indent)
             if (view != null) {
                 val childCount = view.childCount
                 var children = "None"
                 if (childCount > 0)
                     children = (0..<childCount).joinToString(prefix = "\n", separator = "") {
-                        var childView = view.getChild(it)
+                        val childView = view.getChild(it)
                         nodeInfoTreeToFormattedString(childView, it, indent + 4)
                     }
 
-                var msg = arrayOf(
+                val msg = arrayOf(
                     "View(%d):\n".format(childIndex),
                     "    className: %s\n".format(view.className),
                     "    viewIdResourceName: %s\n".format(view.viewIdResourceName),
@@ -324,8 +522,7 @@ class AccessibilityOverride : AccessibilityService() {
             }
         }
 
-        var root = view
-        val msg = nodeInfoTreeToFormattedString(root, 0, 0)
+        val msg = nodeInfoTreeToFormattedString(view, 0, 0)
         var start = 0
         var n = 0
         while (true) {
@@ -335,14 +532,16 @@ class AccessibilityOverride : AccessibilityService() {
                 n += 1
             } else {
                 n = 0
-                Log.i(javaClass.name, msg.slice(start..start + i))
+                Log.d(javaClass.name, msg.slice(start..start + i))
                 start += i + 1
             }
         }
-        Log.i(javaClass.name, msg.slice(start..<msg.length))
+        Log.d(javaClass.name, msg.slice(start..<msg.length))
     }
 
     private fun startLauncher() {
+        Log.d(javaClass.name, "Starting Launcher")
+        if (wakeLock?.isHeld == true) wakeLock?.release()
         removeOverlay()
         val intent = Intent(this, MainActivity::class.java)
         intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -350,11 +549,12 @@ class AccessibilityOverride : AccessibilityService() {
     }
 
     private fun removeOverlay() {
-        Log.i(javaClass.name, "Removing overlay")
-        if (accessibilityWindow?.windowId != null) {
+        Log.d(javaClass.name, "Removing overlay")
+        try {
             val winMgr =
                 getSystemService(WINDOW_SERVICE) as WindowManager
             winMgr.removeView(accessibilityWindow)
+        } catch (_: IllegalArgumentException) {
         }
     }
 
@@ -366,68 +566,48 @@ class AccessibilityOverride : AccessibilityService() {
             KeyEvent.ACTION_DOWN -> {
                 when (event.keyCode) {
                     KeyEvent.KEYCODE_VOLUME_DOWN -> {
-                        Log.i(javaClass.name, "VOLUME DOWN button pressed!")
+                        Log.d(javaClass.name, "VOLUME DOWN button pressed!")
                         return true
                     }
 
                     KeyEvent.KEYCODE_VOLUME_UP -> {
-                        Log.i(javaClass.name, "VOLUME UP button pressed!")
+                        Log.d(javaClass.name, "VOLUME UP button pressed!")
                         return true
                     }
 
                     KeyEvent.KEYCODE_HOME -> {
-                        Log.i(javaClass.name, "HOME button pressed")
-                        Log.i(javaClass.name, currentActivity)
-                        if (event.isLongPress) {
-                            val am = getSystemService(ACTIVITY_SERVICE) as ActivityManager
-                            am.killBackgroundProcesses("com.viber.voip")
-                            am.killBackgroundProcesses("com.whatsapp")
-                            Log.i(javaClass.name, "Restarting calling apps")
-                        }
-                        if (limitedMode) {
-                            val root = rootInActiveWindow
-                            when (currentActivity) {
-                                VIBER_CALL -> {
-                                    printNodeInfoTree(root)
-
-                                    val result =
-                                        root?.findAccessibilityNodeInfosByViewId("com.viber.voip:id/leaveConference")
-                                    if (result?.isNotEmpty() == true) {
-                                        val endCallButton = result[0]
-                                        endCallButton.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                                    }
-                                    val dpm =
-                                        getSystemService(DEVICE_POLICY_SERVICE) as DevicePolicyManager
-                                    dpm.lockNow()
+                        Log.d(javaClass.name, "HOME button pressed")
+                        val root = rootInActiveWindow
+                        if (root == null) {
+                            Log.e(javaClass.name, "getRootInActiveWindow() returned null")
+                            startLauncher()
+                        } else {
+                            when (root.packageName) {
+                                "com.viber.voip" -> {
+                                    ViberInterface.tryEndCall(root)
+                                    removeOverlay()
                                 }
 
-                                WHATSAPP_CALL -> {
-//                                    val endCallButton = root?.getChild(6)
-//                                    endCallButton?.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-//                                    val dpm =
-//                                        getSystemService(DEVICE_POLICY_SERVICE) as DevicePolicyManager
-//                                    dpm.lockNow()
-                                }
-
-                                MainActivity::class.java.name -> {
-//                                    printNodeInfoTree(root)
-//                                    removeOverlay()
-                                    val dpm =
-                                        getSystemService(DEVICE_POLICY_SERVICE) as DevicePolicyManager
-                                    dpm.lockNow()
+                                "com.whatsapp" -> {
+                                    WhatsAppInterface.tryEndCall(root)
+                                    removeOverlay()
                                 }
 
                                 else -> {
                                     startLauncher()
                                 }
                             }
-                        } else {
-                            startLauncher()
                         }
+                        if (wakeLock?.isHeld == true) wakeLock?.release()
+                        val dpm =
+                            getSystemService(DEVICE_POLICY_SERVICE) as DevicePolicyManager
+                        dpm.lockNow()
+
                         return true
                     }
+
                     else -> {
-                        Log.i(javaClass.name, "Key %X pressed".format(event.keyCode))
+                        Log.d(javaClass.name, "Key %X pressed".format(event.keyCode))
                         return super.onKeyEvent(event)
                     }
                 }
@@ -436,16 +616,16 @@ class AccessibilityOverride : AccessibilityService() {
             KeyEvent.ACTION_UP -> {
                 when (event.keyCode) {
                     KeyEvent.KEYCODE_BACK -> {
-                        Log.i(javaClass.name, "BACK button released")
+                        Log.d(javaClass.name, "BACK button released")
 
                         return if (limitedMode) true
                         else super.onKeyEvent(event)
                     }
 
                     KeyEvent.KEYCODE_APP_SWITCH -> {
-                        Log.i(
+                        Log.d(
                             javaClass.name,
-                            "APP_SWITCH button released".format(event.keyCode)
+                            "APP_SWITCH button released"
                         )
 
                         return if (limitedMode) true
@@ -453,19 +633,18 @@ class AccessibilityOverride : AccessibilityService() {
                     }
 
                     KeyEvent.KEYCODE_HOME -> {
-                        Log.i(
+                        Log.d(
                             javaClass.name,
-                            "HOME_BUTTON button released".format(event.keyCode)
+                            "HOME_BUTTON button released"
                         )
-
-                        if (currentActivity != MainActivity::class.java.name) {
+                        if (lastHandledState != State.Home) {
                             startLauncher()
                         }
                         return true
                     }
 
                     else -> {
-                        Log.i(javaClass.name, "Key %X released".format(event.keyCode))
+                        Log.d(javaClass.name, "Key %X released".format(event.keyCode))
                         return super.onKeyEvent(event)
                     }
                 }

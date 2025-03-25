@@ -56,7 +56,7 @@ class ContactsListActivity : FragmentActivity() {
         }
     }
 
-    var mScreenOffReceiver: BroadcastReceiver = object : BroadcastReceiver() {
+    private var mScreenOffReceiver: BroadcastReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             finish()
         }
@@ -97,9 +97,9 @@ class ContactsListActivity : FragmentActivity() {
             Manifest.permission.CALL_PHONE,
             Manifest.permission.WAKE_LOCK
         )
-        var requestPermissions: Array<String> = requiredPermissions.filter {
+        val requestPermissions: Array<String> = requiredPermissions.filter {
             ActivityCompat.checkSelfPermission(
-                this, Manifest.permission.WAKE_LOCK
+                this, it
             ) != PackageManager.PERMISSION_GRANTED
         }.toTypedArray()
 
@@ -111,9 +111,32 @@ class ContactsListActivity : FragmentActivity() {
     }
 
     private fun setContacts(list: RecyclerView) {
-        val filename = getString(R.string.preferences_file)
-        val prefs = applicationContext.getSharedPreferences(filename, MODE_PRIVATE)
-        val typeString = prefs.getString("typeString", "")!!
+        val pManager = packageManager
+        val typeString = try {
+            arrayOf(
+                Pair(
+                    "com.viber.voip",
+                    "vnd.android.cursor.item/vnd.com.viber.voip.viber_number_call"
+                ),
+                Pair("com.whatsapp", "vnd.android.cursor.item/vnd.com.whatsapp.voip.call"),
+                Pair(
+                    "org.telegram.messenger",
+                    "vnd.android.cursor.item/vnd.org.telegram.messenger.android.call"
+                )
+            ).filter {
+                try {
+                    pManager.getPackageInfo(it.first, 0)
+                } catch (_: PackageManager.NameNotFoundException) {
+                    return@filter false
+                }
+                return@filter true
+            }.map {
+                it.second
+            }.first()
+        } catch (_: NoSuchElementException) {
+            ""
+        }
+
         val content = contentResolver
 
         val projection = arrayOf(
@@ -228,7 +251,7 @@ class ContactsListActivity : FragmentActivity() {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == 100) {
             if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                setContacts(findViewById<RecyclerView>(R.id.list))
+                setContacts(findViewById(R.id.list))
             } else {
                 Toast.makeText(
                     this, "The app was not allowed to read your contact", Toast.LENGTH_LONG
