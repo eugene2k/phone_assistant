@@ -16,7 +16,7 @@ internal abstract class ListAdapter<T : ListAdapter.Item?>(var mContext: Context
             get() = this.itemView
     }
 
-    var mList: ArrayList<T> = ArrayList()
+    var mList: MutableList<T> = mutableListOf()
 
     fun add(item: T) {
         mList.add(item)

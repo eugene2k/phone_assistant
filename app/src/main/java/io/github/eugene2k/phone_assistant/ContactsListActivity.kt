@@ -112,137 +112,143 @@ class ContactsListActivity : FragmentActivity() {
 
     private fun setContacts(list: RecyclerView) {
         val pManager = packageManager
-        val typeString = try {
-            arrayOf(
-                Pair(
-                    "com.viber.voip",
-                    "vnd.android.cursor.item/vnd.com.viber.voip.viber_number_call"
-                ),
-                Pair("com.whatsapp", "vnd.android.cursor.item/vnd.com.whatsapp.voip.call"),
-                Pair(
-                    "org.telegram.messenger",
-                    "vnd.android.cursor.item/vnd.org.telegram.messenger.android.call"
-                )
-            ).filter {
-                try {
-                    pManager.getPackageInfo(it.first, 0)
-                } catch (_: PackageManager.NameNotFoundException) {
-                    return@filter false
-                }
-                return@filter true
-            }.map {
-                it.second
-            }.first()
-        } catch (_: NoSuchElementException) {
-            ""
-        }
-
-        val content = contentResolver
-
-        val projection = arrayOf(
-            ContactsContract.Data._ID,
-            ContactsContract.Data.DISPLAY_NAME,
+        val supportedPackages = arrayOf(
+            Pair(
+                "com.viber.voip",
+                "vnd.android.cursor.item/vnd.com.viber.voip.viber_number_call"
+            ),
+//            Pair("com.whatsapp", "vnd.android.cursor.item/vnd.com.whatsapp.voip.call"),
+//            Pair(
+//                "org.telegram.messenger",
+//                "vnd.android.cursor.item/vnd.org.telegram.messenger.android.call"
+//            )
         )
-        val selection = ContactsContract.Data.MIMETYPE + "=?"
-        val selectionArgs = arrayOf(typeString)
-        val cursor = content.query(
-            ContactsContract.Data.CONTENT_URI, projection, selection, selectionArgs, null
-        )
-        val adapter: ListAdapter<Contact> = object : ListAdapter<Contact>(
-            this
-        ) {
-            override fun onCreateViewHolder(
-                parent: ViewGroup, viewType: Int
-            ): ViewHolder {
-                val l = LinearLayout(mContext)
-                val metrics = resources.displayMetrics
-                val hP =
-                    TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 8.0f, metrics).toInt()
-                run {
-                    val p = ViewGroup.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-                    )
-                    l.layoutParams = p
-                    l.setPadding(0, 30, 0, 30)
-                }
-                run {
-                    val tv = TextView(mContext)
-                    tv.textSize = 18f
+        var typeString: String? = null
 
-                    val p = LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
-                    )
-                    p.gravity = Gravity.START or Gravity.CENTER_VERTICAL
-                    p.weight = 1f
-                    p.marginStart = hP
-                    p.marginEnd = hP
-                    tv.layoutParams = p
-                    l.addView(tv)
-                }
-                run {
-                    val b = ImageButton(mContext)
-                    b.setBackgroundResource(R.drawable.button_background)
-                    b.setImageResource(R.drawable.call_icon)
-                    b.scaleType = ImageView.ScaleType.FIT_CENTER
-
-                    val size = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_MM, 10.0f, metrics)
-                        .toInt()
-                    val p = LinearLayout.LayoutParams(size, size)
-                    p.gravity = Gravity.END or Gravity.CENTER_VERTICAL
-                    p.weight = 0f
-                    p.marginEnd = hP
-                    p.marginStart = hP
-                    b.layoutParams = p
-                    l.addView(b)
-                }
-
-                return ViewHolder(l)
-            }
-
-            override fun onBindViewHolder(
-                holder: ViewHolder, position: Int
-            ) {
-                val layout = holder.view as LinearLayout
-                val item = layout.getChildAt(0) as TextView
-                item.text = mList[position].label
-                val b = layout.getChildAt(1) as ImageButton
-                b.setOnClickListener { onAction(mList[position]) }
-            }
-
-            override fun onAction(item: Contact) {
-                finish()
-                var intent = Intent(AccessibilityOverride.OVERLAY_ENABLE)
-                val overlayText = getString(R.string.overlay_text)
-                intent.putExtra("contact", overlayText.format(item.label))
-                sendBroadcast(intent)
-                intent = Intent(Intent.ACTION_VIEW).addCategory(Intent.CATEGORY_DEFAULT)
-                    .addFlags(Intent.FLAG_ACTIVITY_NO_HISTORY or Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
-                    .setDataAndType(
-                        Uri.withAppendedPath(
-                            ContactsContract.Data.CONTENT_URI, item.id.toString()
-                        ), typeString
-                    )
-                startActivity(intent)
-            }
-        }
-        checkNotNull(cursor)
-        while (cursor.moveToNext()) {
+        for (p in supportedPackages) {
             try {
-                val id = cursor.getInt(0)
-                val displayName = Objects.requireNonNull(cursor.getString(1))
-                adapter.add(Contact(id, displayName))
-            } catch (e: Exception) {
-                val msg = StringBuilder(e.toString())
-                msg.append("\n")
-                for (stackTraceElement in e.stackTrace) {
-                    msg.append(stackTraceElement.toString())
-                    msg.append("\n")
-                }
-                Log.e(javaClass.name, msg.toString())
+                pManager.getPackageInfo(p.first, 0)
+                typeString = p.second
+                break
+            } catch (_: PackageManager.NameNotFoundException) {
+                continue
             }
         }
-        cursor.close()
-        list.adapter = adapter
+        if (typeString != null) {
+            val content = contentResolver
+
+            val projection = arrayOf(
+                ContactsContract.Data._ID,
+                ContactsContract.Data.DISPLAY_NAME,
+                ContactsContract.RawContacts.CONTACT_ID,
+            )
+            val selection = ContactsContract.Data.MIMETYPE + "=?"
+            val selectionArgs = arrayOf(typeString)
+            val cursor = content.query(
+                ContactsContract.Data.CONTENT_URI, projection, selection, selectionArgs, null
+            )
+            val adapter: ListAdapter<Contact> = object : ListAdapter<Contact>(
+                this
+            ) {
+                override fun onCreateViewHolder(
+                    parent: ViewGroup, viewType: Int
+                ): ViewHolder {
+                    val l = LinearLayout(mContext)
+                    val metrics = resources.displayMetrics
+                    val hP =
+                        TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 8.0f, metrics)
+                            .toInt()
+                    run {
+                        val p = ViewGroup.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+                        )
+                        l.layoutParams = p
+                        l.setPadding(0, 30, 0, 30)
+                    }
+                    run {
+                        val tv = TextView(mContext)
+                        tv.textSize = 18f
+
+                        val p = LinearLayout.LayoutParams(
+                            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
+                        )
+                        p.gravity = Gravity.START or Gravity.CENTER_VERTICAL
+                        p.weight = 1f
+                        p.marginStart = hP
+                        p.marginEnd = hP
+                        tv.layoutParams = p
+                        l.addView(tv)
+                    }
+                    run {
+                        val b = ImageButton(mContext)
+                        b.setBackgroundResource(R.drawable.button_background)
+                        b.setImageResource(R.drawable.call_icon)
+                        b.scaleType = ImageView.ScaleType.FIT_CENTER
+
+                        val size =
+                            TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_MM, 10.0f, metrics)
+                                .toInt()
+                        val p = LinearLayout.LayoutParams(size, size)
+                        p.gravity = Gravity.END or Gravity.CENTER_VERTICAL
+                        p.weight = 0f
+                        p.marginEnd = hP
+                        p.marginStart = hP
+                        b.layoutParams = p
+                        l.addView(b)
+                    }
+
+                    return ViewHolder(l)
+                }
+
+                override fun onBindViewHolder(
+                    holder: ViewHolder, position: Int
+                ) {
+                    val layout = holder.view as LinearLayout
+                    val item = layout.getChildAt(0) as TextView
+                    item.text = mList[position].label
+                    val b = layout.getChildAt(1) as ImageButton
+                    b.setOnClickListener { onAction(mList[position]) }
+                }
+
+                override fun onAction(item: Contact) {
+                    finish()
+                    var intent = Intent(AccessibilityOverride.OVERLAY_ENABLE)
+                    val overlayText = getString(R.string.overlay_text)
+                    intent.putExtra("contact", overlayText.format(item.label))
+                    sendBroadcast(intent)
+                    intent = Intent(Intent.ACTION_VIEW).addCategory(Intent.CATEGORY_DEFAULT)
+                        .addFlags(Intent.FLAG_ACTIVITY_NO_HISTORY or Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
+                        .setDataAndType(
+                            Uri.withAppendedPath(
+                                ContactsContract.Data.CONTENT_URI, item.id.toString()
+                            ), typeString
+                        )
+                    startActivity(intent)
+                }
+            }
+            checkNotNull(cursor)
+            val uniqIds: MutableSet<Int> = mutableSetOf()
+            while (cursor.moveToNext()) {
+                try {
+                    val id = cursor.getInt(0)
+                    val displayName = Objects.requireNonNull(cursor.getString(1))
+                    val contactId = cursor.getInt(2)
+                    if (uniqIds.add(contactId)) {
+                        adapter.add(Contact(id, displayName))
+                    }
+                } catch (e: Exception) {
+                    val msg = StringBuilder(e.toString())
+                    msg.append("\n")
+                    for (stackTraceElement in e.stackTrace) {
+                        msg.append(stackTraceElement.toString())
+                        msg.append("\n")
+                    }
+                    Log.e(javaClass.name, msg.toString())
+                }
+            }
+            cursor.close()
+            list.adapter = adapter
+        }
     }
 
     override fun onRequestPermissionsResult(

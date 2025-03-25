@@ -241,15 +241,24 @@ class AccessibilityOverride : AccessibilityService() {
                                             startLauncher()
                                             return
                                         }
-                                        val root = event.source?.window?.root
+                                        val source = event.source
+                                        val root = source?.window?.root
                                         if (root != null) {
                                             val result = ViberInterface.checkState(
                                                 root,
                                                 ViberInterface.CALL_IN_PROGRESS or ViberInterface.ANSWERING or ViberInterface.CALL_ENDED
                                             )
                                             handleViberState(result)
+                                        } else if (source != null){
+                                            Log.e(javaClass.name, "event source root is null trying event source")
+
+                                            val result = ViberInterface.checkState(
+                                                source,
+                                                ViberInterface.CALL_IN_PROGRESS or ViberInterface.ANSWERING or ViberInterface.CALL_ENDED
+                                            )
+                                            handleViberState(result)
                                         } else {
-                                            Log.e(javaClass.name, "event root is null")
+                                            Log.e(javaClass.name, "both event root and event source are null")
                                         }
                                     }
 
@@ -334,12 +343,12 @@ class AccessibilityOverride : AccessibilityService() {
                     speakerButton.getBoundsInScreen(buttonBounds)
                     accessibilityWindow.text = ""
                     accessibilityWindow.invalidate()
-                    val accessibilityWindowParams =
+                    @Suppress("DEPRECATION") val accessibilityWindowParams =
                         WindowManager.LayoutParams(
                             WindowManager.LayoutParams.MATCH_PARENT,
                             buttonBounds.height(),
                             WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-                            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                            WindowManager.LayoutParams.FLAG_FULLSCREEN or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
                             PixelFormat.OPAQUE
                         )
                     // NOTE: window placement is screwed up smh, so this is hardcoded
@@ -365,15 +374,6 @@ class AccessibilityOverride : AccessibilityService() {
 
                 lastHandledState = State.CallInProgress
             }
-
-//            WhatsAppInterface.CallEnded -> if (lastHandledState != State.CallEnded) {
-//                Log.d(javaClass.name, "WhatsAppState: CallEnded")
-//                if (expectMainActivity) {
-//                    expectMainActivity = false
-//                    startLauncher()
-//                }
-//                lastHandledState = State.CallEnded
-//            }
 
             WhatsAppInterface.Answering -> if (lastHandledState != State.Answering) {
                 Log.d(javaClass.name, "WhatsAppState: Answering")
@@ -423,13 +423,11 @@ class AccessibilityOverride : AccessibilityService() {
                     val accessibilityWindowParams =
                         WindowManager.LayoutParams(
                             WindowManager.LayoutParams.MATCH_PARENT,
-                            buttonBounds.height(),
+                            WindowManager.LayoutParams.MATCH_PARENT,
                             WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
                             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
                             PixelFormat.TRANSPARENT
                         )
-                    // NOTE: window placement is screwed up smh, so this is hardcoded
-                    accessibilityWindowParams.y = 500
                     val winMgr =
                         getSystemService(WINDOW_SERVICE) as WindowManager
                     try {
@@ -637,7 +635,7 @@ class AccessibilityOverride : AccessibilityService() {
                             javaClass.name,
                             "HOME_BUTTON button released"
                         )
-                        if (lastHandledState != State.Home) {
+                        if (lastHandledState != State.Home && lastHandledState != State.Answering) {
                             startLauncher()
                         }
                         return true

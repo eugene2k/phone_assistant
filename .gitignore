@@ -12,3 +12,4 @@ proguard-rules.pro
 .externalNativeBuild
 .cxx
 local.properties
+app/release
