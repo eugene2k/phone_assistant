@@ -471,10 +471,11 @@ class AccessibilityOverride : AccessibilityService() {
                             }
                         }
                         if (wakeLock?.isHeld == true) wakeLock?.release()
-                        val dpm =
-                            getSystemService(DEVICE_POLICY_SERVICE) as DevicePolicyManager
-                        dpm.lockNow()
-
+                        try {
+                            val dpm =
+                                getSystemService(DEVICE_POLICY_SERVICE) as DevicePolicyManager
+                            dpm.lockNow()
+                        } catch (_: SecurityException) {}
                         return true
                     }
 
